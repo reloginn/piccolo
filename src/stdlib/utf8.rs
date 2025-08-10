@@ -94,12 +94,8 @@ pub fn load_utf8(ctx: Context) {
                         if n == 0 {
                             stack.replace(ctx, (1, c as i64));
                         } else {
-                            if c.is_ascii() {
-                                stack.replace(ctx, (n as i64 + 1, c as i64));
-                            } else {
-                                let len = c.len_utf8();
-                                stack.replace(ctx, ((n + len) as i64, c as i64));
-                            }
+                            let len = c.len_utf8();
+                            stack.replace(ctx, ((n + len) as i64, c as i64));
                         }
                         Ok(CallbackReturn::Return)
                     } else {
@@ -124,14 +120,6 @@ pub fn load_utf8(ctx: Context) {
         Callback::from_fn(&ctx, |ctx, _, mut stack| {
             let (s, i, j) = stack.consume::<(String, Option<i64>, Option<i64>)>(ctx)?;
 
-            let s = match std::str::from_utf8(s.as_bytes()) {
-                Ok(s) => s,
-                Err(err) => {
-                    let position = err.error_len().unwrap_or_default();
-                    stack.replace(ctx, (false, position as i64 + 1));
-                    return Ok(CallbackReturn::Return);
-                }
-            };
             let len = s.len();
 
             let start = convert_index(i.unwrap_or(1), len).unwrap_or(usize::MAX);
@@ -147,6 +135,15 @@ pub fn load_utf8(ctx: Context) {
 
             let s = &s[start..=end];
 
+            let s = match std::str::from_utf8(s.as_bytes()) {
+                Ok(s) => s,
+                Err(err) => {
+                    let position = err.error_len().unwrap_or_default();
+                    stack.replace(ctx, (false, position as i64 + 1));
+                    return Ok(CallbackReturn::Return);
+                }
+            };
+
             stack.replace(ctx, s.chars().count() as i64);
 
             Ok(CallbackReturn::Return)
@@ -159,13 +156,6 @@ pub fn load_utf8(ctx: Context) {
         Callback::from_fn(&ctx, |ctx, _, mut stack| {
             let (s, i, j) = stack.consume::<(String, Option<i64>, Option<i64>)>(ctx)?;
 
-            let s = std::str::from_utf8(s.as_bytes()).map_err(|err| {
-                format!(
-                    "bad argument #1 to 'codepoint' (invalid byte sequence at {})",
-                    err.error_len().unwrap_or_default()
-                )
-                .into_value(ctx)
-            })?;
             let len = s.len();
 
             let i = i.unwrap_or(1);
@@ -188,6 +178,14 @@ pub fn load_utf8(ctx: Context) {
             }
 
             let s = &s[start..=end];
+
+            let s = std::str::from_utf8(s.as_bytes()).map_err(|err| {
+                format!(
+                    "bad argument #1 to 'codepoint' (invalid byte sequence at {})",
+                    err.error_len().unwrap_or_default()
+                )
+                .into_value(ctx)
+            })?;
 
             stack.extend(s.chars().map(|c| Value::Integer(c as i64)));
 
