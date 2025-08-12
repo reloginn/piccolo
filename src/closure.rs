@@ -1,7 +1,4 @@
-use std::{
-    hash::{Hash, Hasher},
-    io::Read,
-};
+use std::hash::{Hash, Hasher};
 
 use allocator_api2::{boxed, vec, SliceExt};
 use gc_arena::{allocator_api::MetricsAlloc, lock::Lock, Collect, Gc, Mutation};
@@ -15,6 +12,9 @@ use crate::{
     Constant, Context, String, Table, Value,
 };
 
+// Note: These errors must not have #[error(transparent)] so that
+// anyhow::Error::root_cause and downcasting work as expected by the
+// interpreter. (Even though that gives slightly cleaner error messages).
 #[derive(Debug, Error)]
 pub enum CompilerError {
     #[error("parse error")]
@@ -115,7 +115,7 @@ impl<'gc> FunctionPrototype<'gc> {
     pub fn compile(
         ctx: Context<'gc>,
         source_name: &str,
-        source: impl Read,
+        source: &[u8],
     ) -> Result<FunctionPrototype<'gc>, CompilerError> {
         #[derive(Copy, Clone)]
         struct Interner<'gc>(Context<'gc>);
@@ -261,7 +261,7 @@ impl<'gc> Closure<'gc> {
     pub fn load(
         ctx: Context<'gc>,
         name: Option<&str>,
-        source: impl Read,
+        source: &[u8],
     ) -> Result<Closure<'gc>, CompilerError> {
         Self::load_with_env(ctx, name, source, ctx.globals())
     }
@@ -270,7 +270,7 @@ impl<'gc> Closure<'gc> {
     pub fn load_with_env(
         ctx: Context<'gc>,
         name: Option<&str>,
-        source: impl Read,
+        source: &[u8],
         env: Table<'gc>,
     ) -> Result<Closure<'gc>, CompilerError> {
         let proto = FunctionPrototype::compile(ctx, name.unwrap_or("<anonymous>"), source)?;

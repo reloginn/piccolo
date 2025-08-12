@@ -214,7 +214,7 @@ impl<'gc> Thread<'gc> {
         &self,
         mc: &Mutation<'gc>,
         expected: ThreadMode,
-    ) -> Result<RefMut<ThreadState<'gc>>, BadThreadMode> {
+    ) -> Result<RefMut<'_, ThreadState<'gc>>, BadThreadMode> {
         assert!(expected != ThreadMode::Running);
         if let Ok(state) = self.0.try_borrow_mut(mc) {
             let found = state.mode();
@@ -813,52 +813,6 @@ impl<'gc, 'a> LuaFrame<'gc, 'a> {
         self.state.stack.extend_from_slice(args);
 
         self.state.push_call(top, func);
-
-        Ok(())
-    }
-
-    /// Calls an externally defined function with arguments placed on the stack
-    /// starting at `bottom`.  On return, places an optional single result of
-    /// the function call in the register indicated by [`MetaReturn`].
-    pub(super) fn call_meta_function_in_place(
-        self,
-        _ctx: Context<'gc>,
-        func: Function<'gc>,
-        bottom: usize,
-        args: u8,
-        meta_ret: MetaReturn,
-    ) -> Result<(), VMError> {
-        let Some(Frame::Lua {
-            expected_return,
-            is_variable,
-            base,
-            stack_size,
-            ..
-        }) = self.state.frames.last_mut()
-        else {
-            panic!("top frame is not lua frame");
-        };
-
-        if *is_variable {
-            return Err(VMError::ExpectedVariableStack(false));
-        }
-
-        self.fuel.consume(Self::FUEL_PER_CALL);
-
-        let top = self.state.stack.len();
-        debug_assert_eq!(top, *base + *stack_size);
-
-        self.fuel.consume(Self::FUEL_PER_CALL);
-
-        *expected_return = Some(LuaReturn::Meta(meta_ret));
-
-        // This does not need to consume fuel for each argument, as
-        // the arguments are used in-place on the stack and are not
-        // shifted.
-
-        self.state.stack.truncate(bottom + args as usize);
-
-        self.state.push_call(bottom, func);
 
         Ok(())
     }
