@@ -2,10 +2,12 @@
 resolver = "2"
 members = [
     "util",
+    "debugger"
 ]
 default-members = [
     ".",
     "util",
+    "debugger"
 ]
 
 [workspace.package]
