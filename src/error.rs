@@ -152,62 +152,78 @@ pub struct ErrorWithStackTrace<'gc> {
 }
 
 impl<'gc> ErrorWithStackTrace<'gc> {
-    pub fn new(original: Error<'gc>, exec: crate::Executor) -> Self {
+    /// Construct a formatted stack trace from [`Error`] and [`Executor`]
+    ///
+    /// # Example
+    /// ```rust
+    /// let exec = ...;
+    /// let error = Error::from("something");
+    /// let error_with_stack_trace = ErrorWithStackTrace::new(error, exec); // or `error.into_error_with_stack_trace(exec)`
+    /// ```
+    pub fn new(original: Error<'gc>, exec: Executor<'gc>) -> Self {
         use crate::compiler::FunctionRef;
         use std::fmt::Write;
 
         let mut stack_trace = format!("stack traceback:");
 
-        if let Ok(state) = exec.into_inner().try_borrow() {
-            if let Some(thread) = state.thread_stack().last() {
-                let thread_state = thread.into_inner().borrow();
-                for frame in thread_state.frames().iter().rev() {
-                    match frame {
-                        Frame::Lua { closure, pc, .. } => {
-                            let prototype = closure.prototype();
-                            let current_pc = pc.saturating_sub(1);
-                            let line = match prototype
-                                .opcode_line_numbers
-                                .binary_search_by_key(&current_pc, |(opi, _)| *opi)
-                            {
-                                Ok(index) => prototype
-                                    .opcode_line_numbers
-                                    .get(index)
-                                    .map(|(_, line)| *line)
-                                    .unwrap_or(LineNumber(0)),
-                                Err(index) => prototype
-                                    .opcode_line_numbers
-                                    .get(index.wrapping_sub(1))
-                                    .map(|(_, line)| *line)
-                                    .unwrap_or(LineNumber(0)),
-                            };
+        let Ok(state) = exec.into_inner().try_borrow() else {
+            return Self {
+                original,
+                stack_trace,
+            };
+        };
 
-                            let location = match prototype.reference {
-                                FunctionRef::Chunk => "in main chunk".into(),
-                                FunctionRef::Named(name, _) => {
-                                    format!("in function '{}'", name.display_lossy())
-                                }
-                                FunctionRef::Expression(line) => format!(
-                                    "in function <{}:{}>",
-                                    prototype.chunk_name.display_lossy(),
-                                    line
-                                ),
-                            };
+        let Some(thread) = state.thread_stack().last() else {
+            return Self {
+                original,
+                stack_trace,
+            };
+        };
 
-                            write!(
-                                stack_trace,
-                                "\n\t{}:{}: {}",
-                                prototype.chunk_name.display_lossy(),
-                                line,
-                                location
-                            )
-                            .ok();
-                        }
-                        _ => {
-                            write!(stack_trace, "\n\t[C]: in ?").ok();
-                        }
+        let thread_state = thread.into_inner().borrow();
+
+        for frame in thread_state.frames().iter().rev() {
+            if let Frame::Lua { closure, pc, .. } = frame {
+                let prototype = closure.prototype();
+                let current_pc = pc.saturating_sub(1);
+                let line = match prototype
+                    .opcode_line_numbers
+                    .binary_search_by_key(&current_pc, |(opi, _)| *opi)
+                {
+                    Ok(index) => prototype
+                        .opcode_line_numbers
+                        .get(index)
+                        .map(|(_, line)| *line)
+                        .unwrap_or(LineNumber(0)),
+                    Err(index) => prototype
+                        .opcode_line_numbers
+                        .get(index.wrapping_sub(1))
+                        .map(|(_, line)| *line)
+                        .unwrap_or(LineNumber(0)),
+                };
+
+                let location = match prototype.reference {
+                    FunctionRef::Chunk => "in main chunk".into(),
+                    FunctionRef::Named(name, _) => {
+                        format!("in function '{}'", name.display_lossy())
                     }
-                }
+                    FunctionRef::Expression(line) => format!(
+                        "in function <{}:{}>",
+                        prototype.chunk_name.display_lossy(),
+                        line
+                    ),
+                };
+
+                write!(
+                    stack_trace,
+                    "\n\t{}:{}: {}",
+                    prototype.chunk_name.display_lossy(),
+                    line,
+                    location
+                )
+                .ok();
+            } else {
+                write!(stack_trace, "\n\t[C]: in ?").ok();
             }
         }
 
@@ -246,9 +262,7 @@ pub enum Error<'gc> {
 impl<'gc> fmt::Display for Error<'gc> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            // For Lua errors, print only the contained value as Lua would.
             Error::Lua(err) => write!(f, "{}", err),
-            // For runtime errors, prefer the root cause message without any prefixes.
             Error::Runtime(err) => write!(f, "{}", err.root_cause()),
         }
     }
