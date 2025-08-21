@@ -153,13 +153,6 @@ pub struct ErrorWithStackTrace<'gc> {
 
 impl<'gc> ErrorWithStackTrace<'gc> {
     /// Construct a formatted stack trace from [`Error`] and [`Executor`]
-    ///
-    /// # Example
-    /// ```rust
-    /// let exec = ...;
-    /// let error = Error::from("something");
-    /// let error_with_stack_trace = ErrorWithStackTrace::new(error, exec); // or `error.into_error_with_stack_trace(exec)`
-    /// ```
     pub fn new(original: Error<'gc>, exec: Executor<'gc>) -> Self {
         use crate::compiler::FunctionRef;
         use std::fmt::Write;
