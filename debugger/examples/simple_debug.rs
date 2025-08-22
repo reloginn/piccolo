@@ -1,11 +1,8 @@
-use piccolo::{Closure, Executor, Fuel, Lua, Table, Value};
+use piccolo::{Value};
 use piccolo_debugger::Debugger;
 
 fn main() {
-    let mut lua = Lua::core();
-
-    lua.enter(|ctx| {
-        let source = br#"
+    let source = r#"
             x = 0
             local outer = 10
             local function foo(n)
@@ -22,41 +19,37 @@ fn main() {
 
             local z = bar()
         "#;
+    let path = "test.lua";
 
-        let chunk = Closure::load(ctx, Some("test.lua"), source).unwrap();
+    let mut dbg = Debugger::new();
+    let session_id = dbg.add_session(source, path);
 
-        let t = Table::new(&ctx);
-        ctx.globals().set_field(ctx, "t", t);
+    dbg.launch(session_id);
 
-        let mut exec = Executor::start(ctx, chunk.into(), ());
+    dbg.add_breakpoint(session_id, "test.lua".to_string(), 3);
+    dbg.add_breakpoint(session_id, "test.lua".to_string(), 9);
+    dbg.add_breakpoint(session_id, "test.lua".to_string(), 13);
 
-        let mut dbg = Debugger::new(exec);
-
-        dbg.add_breakpoint("test.lua", 3);
-        dbg.add_breakpoint("test.lua", 9);
-        dbg.add_breakpoint("test.lua", 13);
-
-        let _ = dbg.add_function_breakpoint(ctx, "foo");
+    dbg.add_function_breakpoint(session_id, "foo".to_string());
 
         println!("Breakpoints:");
-        for (src, lines) in dbg.list_breakpoints() {
+        for (src, lines) in dbg.list_breakpoints(session_id).unwrap() {
             let mut v: Vec<usize> = lines.iter().copied().collect();
             v.sort_unstable();
             println!("  {src}: {:?}", v);
         }
 
-        dbg.remove_breakpoint("test.lua", 9);
+    dbg.remove_breakpoint(session_id, "test.lua".to_string(), 9);
 
-        dbg.watch_global("x");
-        dbg.watch_table_key(t, Value::String(ctx.intern(b"k")));
+    dbg.watch_global(session_id, "x".to_string(), None);
 
         println!("Continue…");
-        let mut stop = dbg.continue_run(ctx);
+        let mut stop = dbg.continue_run(session_id);
         println!("Stopped: {:?}", stop);
 
-        let bt = dbg.backtrace(ctx);
+        let bt = dbg.backtrace(session_id);
         println!("Backtrace:");
-        for (i, loc) in bt.iter().enumerate() {
+        for (i, loc) in bt.unwrap().iter().enumerate() {
             println!(
                 "  #{i} {}:{} {}",
                 loc.chunk(),
@@ -65,26 +58,26 @@ fn main() {
             );
         }
 
-        if let Some(dis) = dbg.disassemble("", None, None) {
+        if let Some(dis) = dbg.disassemble(session_id, "".to_string(), None, None).unwrap() {
             println!("Disassembly (current function):");
             for l in dis.iter().take(10) {
                 println!("  {l:?}");
             }
         }
 
-        if let Some(readed) = dbg.read_memory("", None, None) {
+        if let Some(readed) = dbg.read_memory(session_id, "".to_string(), None, None).unwrap() {
             println!("Readed: {:?}", readed);
         }
 
-        if let Some(regs) = dbg.read_registers(ctx) {
+        if let Some(regs) = dbg.read_registers(session_id).unwrap() {
             println!("Top frame registers ({}):", regs.len());
             for (i, v) in regs.iter().enumerate() {
-                println!("  r{i} = {}", v.display());
+                println!("  r{i} = {}", v);
             }
         }
 
         println!("Stack snapshot (before stepping):");
-        for (loc, regs) in dbg.stack_snapshot(ctx) {
+        for (loc, regs) in dbg.stack_snapshot(session_id).unwrap() {
             println!(
                 "  {}:{} {} ({} regs)",
                 loc.chunk(),
@@ -95,34 +88,29 @@ fn main() {
         }
 
         println!("Step into…");
-        stop = dbg.step_into(ctx);
+        stop = dbg.step_into(session_id);
         println!("Stopped: {:?}", stop);
 
-        if let Some(ups) = dbg.read_upvalues(ctx) {
+        if let Some(ups) = dbg.read_upvalues(session_id).unwrap() {
             println!("Upvalues ({}):", ups.len());
             for (i, v) in ups.iter().enumerate() {
-                println!("  uv{i} = {}", v.display());
+                println!("  uv{i} = {}", v);
             }
         }
 
         println!("Step over…");
-        stop = dbg.step_over(ctx);
+        stop = dbg.step_over(session_id);
         println!("Stopped: {:?}", stop);
 
         println!("Step out…");
-        stop = dbg.step_out(ctx);
+        stop = dbg.step_out(session_id);
         println!("Stopped: {:?}", stop);
 
         println!("Continue again…");
-        stop = dbg.continue_run(ctx);
+        stop = dbg.continue_run(session_id);
         println!("Stopped: {:?}", stop);
 
-        if let Some(v0) = dbg.read_register(ctx, 0) {
-            println!("r0 = {}", v0.display());
+        if let Some(v0) = dbg.read_register(session_id, 0).unwrap() {
+            println!("r0 = {}", v0);
         }
-
-        exec = dbg.executor();
-        let mut fuel = Fuel::with(10_000);
-        let _ = exec.step(ctx, &mut fuel);
-    });
 }

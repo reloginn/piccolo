@@ -1,8 +1,6 @@
-use piccolo::Value;
 
 #[derive(Debug, Clone)]
-pub enum WatchSpec<'gc> {
+pub enum WatchSpec {
     Register(usize),
     Global(String),
-    TableKey(piccolo::Table<'gc>, Value<'gc>),
 }

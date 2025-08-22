@@ -1,5 +1,3 @@
-use std::mem::ManuallyDrop;
-
 use base64::Engine;
 use piccolo::{Context, Executor};
 
@@ -462,12 +460,11 @@ impl<'gc> Adapter<'gc> {
     pub fn stack_trace(
         &mut self,
         arguments: StackTraceArguments,
-        ctx: piccolo::Context<'gc>,
     ) -> StackTraceResponse {
         let mut stack_frames = Vec::new();
 
         if let Some(ref debugger) = self.debugger {
-            let backtrace = debugger.backtrace(ctx);
+            let backtrace = debugger.backtrace();
             let start_frame = arguments.start_frame.unwrap_or(0) as usize;
             let levels = arguments.levels.map(|l| l as usize);
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Breakpoint {
@@ -31,7 +31,7 @@ impl Breakpoints {
             .retain(|breakpoint| !(breakpoint.source == chunk && breakpoint.line == line))
     }
 
-    pub fn list(&self) -> impl Iterator<Item = (&str, Vec<usize>)> {
+    pub fn list(&self) -> HashMap<String, Vec<usize>> {
         let sources: BTreeSet<&str> = self
             .breakpoints
             .iter()
@@ -39,14 +39,14 @@ impl Breakpoints {
             .collect();
         sources.into_iter().map(|source| {
             (
-                source,
+                source.to_owned(),
                 self.breakpoints
                     .iter()
                     .filter(|breakpoint| breakpoint.source == source)
                     .map(|breakpoint| breakpoint.line)
                     .collect(),
             )
-        })
+        }).collect()
     }
 
     pub fn matches(&self, chunk: &str, line: usize) -> Vec<usize> {
