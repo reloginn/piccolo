@@ -6,7 +6,6 @@ struct PrototypeReference {
 }
 
 use std::collections::HashMap;
-
 use piccolo::opcode::Operation;
 
 pub use self::{
@@ -25,10 +24,10 @@ mod watch;
 
 #[derive(Debug)]
 pub struct Disassembled {
-    symbol: &'static str,
-    index: usize,
-    line: usize,
-    operation: Operation,
+    pub symbol: &'static str,
+    pub index: usize,
+    pub line: usize,
+    pub operation: Operation,
 }
 
 pub struct Debugger {
