@@ -37,16 +37,19 @@ impl Breakpoints {
             .iter()
             .map(|breakpoint| breakpoint.source.as_str())
             .collect();
-        sources.into_iter().map(|source| {
-            (
-                source.to_owned(),
-                self.breakpoints
-                    .iter()
-                    .filter(|breakpoint| breakpoint.source == source)
-                    .map(|breakpoint| breakpoint.line)
-                    .collect(),
-            )
-        }).collect()
+        sources
+            .into_iter()
+            .map(|source| {
+                (
+                    source.to_owned(),
+                    self.breakpoints
+                        .iter()
+                        .filter(|breakpoint| breakpoint.source == source)
+                        .map(|breakpoint| breakpoint.line)
+                        .collect(),
+                )
+            })
+            .collect()
     }
 
     pub fn matches(&self, chunk: &str, line: usize) -> Vec<usize> {

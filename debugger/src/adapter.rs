@@ -1,32 +1,10 @@
+use std::sync::mpsc::{Receiver, Sender};
+
 use base64::Engine;
-use piccolo::{Context, Executor};
 
-use super::Debugger;
+use crate::StopReason;
 
-#[derive(PartialEq, Eq, Clone, Copy)]
-pub enum State {
-    NotLaunched,
-    Launched,
-    Suspended,
-    Terminated,
-}
-
-pub enum Error {
-    AdapterNotLaunched,
-    AdapterSuspended,
-    AdapterTerminated,
-}
-
-impl Error {
-    pub fn reason(state: State) -> Self {
-        match state {
-            State::Suspended => Error::AdapterSuspended,
-            State::Terminated => Error::AdapterTerminated,
-            State::NotLaunched => Error::AdapterNotLaunched,
-            _ => unreachable!(),
-        }
-    }
-}
+use super::{Debugger, Error};
 
 #[allow(dead_code)]
 pub struct Capabilities {
@@ -69,12 +47,14 @@ pub struct Capabilities {
     supports_ansi_styling: bool,
 }
 
+pub struct AttachArguments;
+
 pub struct AttachResponse;
 
 pub enum SteppingGranularity {}
 
 pub struct StepOutArguments {
-    thread_id: i64,
+    thread_id: usize,
     single_thread: Option<bool>,
     granularity: Option<SteppingGranularity>,
 }
@@ -84,16 +64,16 @@ pub struct StepBackResponse;
 pub struct StepOutResponse;
 
 pub struct StepInArguments {
-    thread_id: i64,
+    thread_id: usize,
     single_thread: Option<bool>,
-    target_id: Option<i64>,
+    target_id: Option<usize>,
     granularity: Option<SteppingGranularity>,
 }
 
 pub struct StepInResponse;
 
 pub struct StepInTargetsArguments {
-    frame_id: i64,
+    frame_id: usize,
 }
 
 pub struct StepInTarget {
@@ -217,9 +197,9 @@ pub struct StackTraceFormat {
 }
 
 pub struct StackTraceArguments {
-    thread_id: i64,
-    start_frame: Option<i64>,
-    levels: Option<i64>,
+    thread_id: usize,
+    start_frame: Option<usize>,
+    levels: Option<usize>,
     format: Option<StackTraceFormat>,
 }
 
@@ -243,6 +223,7 @@ pub struct StackFrame {
 }
 
 pub struct ReadMemoryArguments {
+    thread_id: Option<usize>,
     memory_reference: String,
     offset: Option<usize>,
     count: Option<usize>,
@@ -255,6 +236,7 @@ pub struct ReadMemoryResponse {
 }
 
 pub struct DisassembleArguments {
+    thread_id: Option<usize>,
     memory_reference: String,
     offset: Option<usize>,
     instruction_offset: Option<usize>,
@@ -323,23 +305,123 @@ pub struct DisconnectResponse;
 
 pub struct LaunchArguments {
     no_debug: Option<bool>,
+    /// Name of the thread to launch (may be file path/name or function name)
+    name: String,
+    /// Source code to launch
+    source: String,
 }
 
-pub struct Adapter<'gc> {
-    debugger: Option<Debugger<'gc>>,
-    state: State,
+pub struct RestartResponse;
+
+pub struct TerminateArguments {
+    restart: Option<bool>,
 }
 
-impl<'gc> Adapter<'gc> {
-    pub fn new() -> Self {
-        Self {
-            debugger: None,
-            state: State::NotLaunched,
-        }
+pub struct TerminateResponse;
+
+pub struct TerminateThreadsArguments {
+    thread_ids: Vec<usize>,
+}
+
+pub struct TerminateThreadsResponse;
+
+pub struct Thread {
+    id: usize,
+    name: String,
+}
+
+pub struct ThreadsResponse {
+    threads: Vec<Thread>,
+}
+
+pub enum BreakpointReason {
+    Changed,
+    New,
+    Removed,
+}
+
+pub enum StartMethod {
+    Launch,
+    Attach,
+}
+
+pub enum StoppedReason {
+    Step,
+    Breakpoint,
+    Pause,
+    FunctionBreakpoint,
+    DataBreakpoint,
+    InstructionBreakpoint,
+}
+
+pub enum ThreadReason {
+    Started,
+    Exited,
+}
+
+pub enum Event {
+    Initialized,
+    Breakpoint {
+        thread_id: usize,
+        reason: BreakpointReason,
+        breakpoint: Breakpoint,
+    },
+    Continued {
+        thread_id: usize,
+        all_threads_continued: Option<bool>,
+    },
+    Process {
+        thread_id: usize,
+        name: String,
+        system_process_id: Option<usize>,
+        is_local_process: Option<bool>,
+        start_method: Option<StartMethod>,
+        pointer_size: Option<usize>,
+    },
+    Stopped {
+        reason: StoppedReason,
+        description: Option<String>,
+        thread_id: Option<usize>,
+        preserve_focus_hint: Option<bool>,
+        text: Option<String>,
+        all_threads_stopped: Option<bool>,
+        hit_breakpoint_ids: Option<Vec<usize>>,
+    },
+    Terminated {
+        restart: Option<bool>,
+    },
+    Thread {
+        reason: ThreadReason,
+        thread_id: usize,
+    },
+}
+
+pub struct Adapter {
+    debugger: Debugger,
+    sender: Sender<Event>,
+}
+
+impl Adapter {
+    pub fn new() -> (Self, Receiver<Event>) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let adapter = Self {
+            sender,
+            debugger: Debugger::new(),
+        };
+        (adapter, receiver)
     }
 
-    pub fn initialize() -> Capabilities {
-        Capabilities {
+    pub fn from_debuggee(debuggee: Debugger) -> (Self, Receiver<Event>) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let adapter = Self {
+            sender,
+            debugger: debuggee,
+        };
+        (adapter, receiver)
+    }
+
+    pub fn initialize(&self) -> Result<Capabilities, Error> {
+        let capabilities = Capabilities {
             supports_configuration_done_request: false,
             supports_function_breakpoints: true,
             supports_conditional_breakpoints: false,
@@ -361,7 +443,7 @@ impl<'gc> Adapter<'gc> {
             supports_delayed_stack_trace_loading: true,
             supports_loaded_sources_request: false,
             supports_log_points: false,
-            supports_terminate_threads_request: false,
+            supports_terminate_threads_request: true,
             supports_set_expression: false,
             supports_terminate_request: true,
             supports_data_breakpoints: true,
@@ -377,47 +459,203 @@ impl<'gc> Adapter<'gc> {
             supports_single_thread_execution_requests: false,
             supports_data_breakpoint_bytes: false,
             supports_ansi_styling: false,
-        }
-    }
-
-    pub fn attach(&mut self, executor: Executor<'gc>) -> Result<AttachResponse, Error> {
-        if self.state == State::NotLaunched {
-            self.debugger = Some(Debugger::new(executor));
-            self.state = State::Launched;
-            Ok(AttachResponse)
-        } else {
-            Err(Error::reason(self.state))
-        }
-    }
-
-    pub fn step_in(
-        &mut self,
-        ctx: Context<'gc>,
-        _arguments: StepInArguments,
-    ) -> Result<StepInResponse, Error> {
-        if self.state != State::Launched {
-            return Err(Error::reason(self.state));
-        }
-        let Some(ref mut debugger) = self.debugger else {
-            return Err(Error::AdapterNotLaunched);
         };
-        debugger.step_into(ctx);
+        self.sender
+            .send(Event::Initialized)
+            .map_err(|_| Error::ReceiverDead)?;
+        Ok(capabilities)
+    }
+
+    pub fn threads(&self) -> ThreadsResponse {
+        let threads = self
+            .debugger
+            .sessions
+            .iter()
+            .map(|session| Thread {
+                id: session.id(),
+                name: session.name().to_string(),
+            })
+            .collect::<Vec<_>>();
+        ThreadsResponse { threads }
+    }
+
+    pub fn attach(&mut self) -> AttachResponse {
+        AttachResponse
+    }
+
+    pub fn restart(&mut self, _arguments: AttachArguments) -> RestartResponse {
+        self.debugger.sessions.iter_mut().for_each(|session| {
+            session.restart();
+        });
+        RestartResponse
+    }
+
+    pub fn restart_session(&mut self, session_id: usize) {
+        self.debugger.restart(session_id);
+    }
+
+    pub fn disconnect(
+        &mut self,
+        arguments: DisconnectArguments,
+    ) -> Result<DisconnectResponse, Error> {
+        let terminate = arguments.terminate_debuggee.unwrap_or(true);
+        let suspend = arguments.suspend_debuggee.unwrap_or(false);
+        let restart = arguments.restart.unwrap_or(false);
+
+        match (terminate, suspend, restart) {
+            (true, _, true) => {
+                self.terminate(TerminateArguments {
+                    restart: Some(true),
+                })?;
+            }
+            (true, _, false) => {
+                self.terminate(TerminateArguments { restart: None })?;
+            }
+            (false, true, _) => {
+                self.debugger.sessions.iter_mut().for_each(|session| {
+                    session.disconnect(); // pause
+                });
+            }
+            (false, false, _) => {
+                self.debugger.sessions.iter_mut().for_each(|session| {
+                    session.disconnect();
+                });
+            }
+        }
+
+        Ok(DisconnectResponse)
+    }
+
+    pub fn disconnect_session(&mut self, session_id: usize) {
+        self.debugger.disconnect(session_id);
+    }
+
+    pub fn terminate(&mut self, arguments: TerminateArguments) -> Result<TerminateResponse, Error> {
+        self.debugger.sessions.iter_mut().for_each(|session| {
+            session.terminate();
+        });
+        self.sender
+            .send(Event::Terminated {
+                restart: arguments.restart,
+            })
+            .map_err(|_| Error::ReceiverDead)?;
+        Ok(TerminateResponse)
+    }
+
+    pub fn terminate_session(&mut self, session_id: usize) {
+        self.debugger.terminate(session_id);
+    }
+
+    pub fn terminate_threads(
+        &mut self,
+        arguments: TerminateThreadsArguments,
+    ) -> TerminateThreadsResponse {
+        arguments
+            .thread_ids
+            .iter()
+            .for_each(|id| self.debugger.terminate(*id));
+        TerminateThreadsResponse
+    }
+
+    pub fn launch(&mut self, arguments: LaunchArguments) -> Result<(), Error> {
+        let no_debug = matches!(arguments.no_debug, Some(true));
+        if no_debug {
+            unreachable!("TODO")
+        } else {
+            let thread_id = self
+                .debugger
+                .add_session(&arguments.source, &arguments.name);
+            self.sender
+                .send(Event::Thread {
+                    reason: ThreadReason::Started,
+                    thread_id,
+                })
+                .map_err(|_| Error::ReceiverDead)?;
+            self.debugger.launch(thread_id);
+            self.sender
+                .send(Event::Process {
+                    thread_id,
+                    name: arguments.name,
+                    system_process_id: None,
+                    is_local_process: Some(true),
+                    start_method: Some(StartMethod::Launch),
+                    pointer_size: None,
+                })
+                .map_err(|_| Error::ReceiverDead)?;
+        }
+        Ok(())
+    }
+
+    pub fn r#continue(&mut self, arguments: ContinueArguments) -> Result<ContinueResponse, Error> {
+        self.debugger.continue_run(arguments.thread_id)?;
+
+        self.sender
+            .send(Event::Continued {
+                thread_id: arguments.thread_id,
+                all_threads_continued: None,
+            })
+            .map_err(|_| Error::ReceiverDead)?;
+
+        Ok(ContinueResponse {
+            all_threads_continued: None,
+        })
+    }
+
+    pub fn step_in(&mut self, arguments: StepInArguments) -> Result<StepInResponse, Error> {
+        let reason = self.debugger.step_into(arguments.thread_id)?;
+        self.sender
+            .send(Event::Stopped {
+                reason: match reason {
+                    StopReason::Breakpoint { .. } => StoppedReason::Breakpoint,
+                    StopReason::Step { .. } => StoppedReason::Step,
+                    StopReason::Watchpoint { .. } => StoppedReason::DataBreakpoint,
+                    StopReason::Suspended => StoppedReason::Pause,
+                },
+                description: Some(reason.reason().to_string()),
+                thread_id: Some(arguments.thread_id),
+                preserve_focus_hint: None,
+                text: Some(reason.to_string()),
+                all_threads_stopped: None,
+                hit_breakpoint_ids: match reason {
+                    StopReason::Breakpoint { breakpoint_ids, .. } => Some(breakpoint_ids),
+                    _ => None,
+                },
+            })
+            .map_err(|_| Error::ReceiverDead)?;
         Ok(StepInResponse)
     }
 
-    pub fn step_out(
-        &mut self,
-        ctx: Context<'gc>,
-        _arguments: StepOutArguments,
-    ) -> Result<StepOutResponse, Error> {
-        if self.state != State::Launched {
-            return Err(Error::reason(self.state));
-        }
-        let Some(ref mut debugger) = self.debugger else {
-            return Err(Error::AdapterNotLaunched);
-        };
-        debugger.step_out(ctx);
+    pub fn step_out(&mut self, arguments: StepOutArguments) -> Result<StepOutResponse, Error> {
+        let reason = self.debugger.step_out(arguments.thread_id)?;
+        self.sender
+            .send(Event::Stopped {
+                reason: match reason {
+                    StopReason::Breakpoint { .. } => StoppedReason::Breakpoint,
+                    StopReason::Step { .. } => StoppedReason::Step,
+                    StopReason::Watchpoint { .. } => StoppedReason::DataBreakpoint,
+                    StopReason::Suspended => StoppedReason::Pause,
+                },
+                description: Some(reason.reason().to_string()),
+                thread_id: Some(arguments.thread_id),
+                preserve_focus_hint: None,
+                text: Some(reason.to_string()),
+                all_threads_stopped: None,
+                hit_breakpoint_ids: match reason {
+                    StopReason::Breakpoint { breakpoint_ids, .. } => Some(breakpoint_ids),
+                    _ => None,
+                },
+            })
+            .map_err(|_| Error::ReceiverDead)?;
         Ok(StepOutResponse)
+    }
+
+    pub fn breakpoint_locations(
+        &mut self,
+        arguments: BreakpointLocationsArguments,
+    ) -> BreakpointLocationsResponse {
+        BreakpointLocationsResponse {
+            breakpoints: vec![],
+        }
     }
 
     pub fn set_breakpoints(
@@ -441,7 +679,6 @@ impl<'gc> Adapter<'gc> {
     pub fn set_function_breakpoints(
         &mut self,
         arguments: SetFunctionBreakpointsArguments,
-        ctx: piccolo::Context<'gc>,
     ) -> SetFunctionBreakpointsResponse {
         SetFunctionBreakpointsResponse {
             breakpoints: vec![],
@@ -460,82 +697,76 @@ impl<'gc> Adapter<'gc> {
     pub fn stack_trace(
         &mut self,
         arguments: StackTraceArguments,
-    ) -> StackTraceResponse {
+    ) -> Result<StackTraceResponse, Error> {
         let mut stack_frames = Vec::new();
 
-        if let Some(ref debugger) = self.debugger {
-            let backtrace = debugger.backtrace();
-            let start_frame = arguments.start_frame.unwrap_or(0) as usize;
-            let levels = arguments.levels.map(|l| l as usize);
+        let backtrace = self.debugger.backtrace(arguments.thread_id)?;
 
-            let frames_to_take = if let Some(levels) = levels {
-                levels
-            } else {
-                backtrace.len().saturating_sub(start_frame)
-            };
+        let start_frame = arguments.start_frame.unwrap_or(0) as usize;
+        let levels = arguments.levels.map(|l| l as usize);
 
-            for (index, location) in backtrace
-                .iter()
-                .skip(start_frame)
-                .take(frames_to_take)
-                .enumerate()
-            {
-                let frame_id = start_frame + index;
-                let function_name = location.function_ref().to_string();
-
-                stack_frames.push(StackFrame {
-                    id: frame_id,
-                    name: function_name,
-                    source: Some(Source {
-                        name: Some(location.chunk().to_string()),
-                        path: Some(location.chunk().to_string()),
-                        source_reference: None,
-                        presentation_hint: None,
-                        origin: None,
-                        sources: None,
-                        adapter_data: None,
-                        checksums: None,
-                    }),
-                    line: location.line(),
-                    column: 1, // Default to column 1
-                    end_line: None,
-                    end_column: None,
-                    can_restart: Some(false),
-                    instruction_pointer_reference: Some(format!("frame:{}", frame_id)),
-                    module_id: None,
-                    presentation_hint: None,
-                });
-            }
-
-            StackTraceResponse {
-                stack_frames,
-                total_frames: backtrace.len(),
-            }
+        let frames_to_take = if let Some(levels) = levels {
+            levels
         } else {
-            StackTraceResponse {
-                stack_frames: vec![],
-                total_frames: 0,
-            }
+            backtrace.len().saturating_sub(start_frame)
+        };
+
+        for (index, location) in backtrace
+            .iter()
+            .skip(start_frame)
+            .take(frames_to_take)
+            .enumerate()
+        {
+            let frame_id = start_frame + index;
+            let function_name = location.function_ref().to_string();
+
+            stack_frames.push(StackFrame {
+                id: frame_id,
+                name: function_name,
+                source: Some(Source {
+                    name: Some(location.chunk().to_string()),
+                    path: Some(location.chunk().to_string()),
+                    source_reference: None,
+                    presentation_hint: None,
+                    origin: None,
+                    sources: None,
+                    adapter_data: None,
+                    checksums: None,
+                }),
+                line: location.line(),
+                column: 1,
+                end_line: None,
+                end_column: None,
+                can_restart: Some(false),
+                instruction_pointer_reference: Some(format!("frame:{}", frame_id)),
+                module_id: None,
+                presentation_hint: None,
+            });
         }
+
+        Ok(StackTraceResponse {
+            stack_frames,
+            total_frames: backtrace.len(),
+        })
     }
 
     pub fn read_memory(
         &mut self,
         arguments: ReadMemoryArguments,
     ) -> Result<ReadMemoryResponse, Error> {
-        if self.state != State::Launched {
-            return Err(Error::reason(self.state));
-        }
-
-        let Some(ref debugger) = self.debugger else {
-            return Err(Error::AdapterNotLaunched);
-        };
-
-        let Some(bytes) = debugger.read_memory(
-            &arguments.memory_reference,
+        let Some(bytes) = self.debugger.read_memory(
+            arguments.thread_id.unwrap_or(
+                self.debugger
+                    .sessions
+                    .last()
+                    .map(|session| session.id())
+                    .unwrap_or_default(),
+            ),
+            arguments.memory_reference.to_owned(),
             arguments.offset,
             arguments.count,
-        ) else {
+        )?
+        else {
             return Ok(ReadMemoryResponse {
                 address: arguments.memory_reference,
                 unreadable_bytes: arguments.count,
@@ -555,19 +786,19 @@ impl<'gc> Adapter<'gc> {
         &mut self,
         arguments: DisassembleArguments,
     ) -> Result<DisassembleResponse, Error> {
-        if self.state != State::Launched {
-            return Err(Error::reason(self.state));
-        }
-
-        let Some(ref debugger) = self.debugger else {
-            return Err(Error::AdapterNotLaunched);
-        };
-
-        let Some(disassembled) = debugger.disassemble(
-            &arguments.memory_reference,
+        let Some(disassembled) = self.debugger.disassemble(
+            arguments.thread_id.unwrap_or(
+                self.debugger
+                    .sessions
+                    .last()
+                    .map(|session| session.id())
+                    .unwrap_or_default(),
+            ),
+            arguments.memory_reference,
             arguments.instruction_offset,
             arguments.instruction_count,
-        ) else {
+        )?
+        else {
             return Ok(DisassembleResponse {
                 instructions: vec![],
             });
@@ -590,79 +821,5 @@ impl<'gc> Adapter<'gc> {
                 })
                 .collect(),
         })
-    }
-
-    pub fn r#continue(
-        &mut self,
-        _arguments: ContinueArguments,
-        ctx: Context<'gc>,
-    ) -> Result<ContinueResponse, Error> {
-        if self.state != State::Launched {
-            return Err(Error::reason(self.state));
-        }
-
-        let Some(ref mut debugger) = self.debugger else {
-            return Err(Error::AdapterNotLaunched);
-        };
-
-        debugger.continue_run(ctx);
-
-        Ok(ContinueResponse {
-            all_threads_continued: Some(true),
-        })
-    }
-
-    pub fn pause(&mut self, _arguments: PauseArguments) -> Result<PauseResponse, Error> {
-        self.state = State::Suspended;
-        Ok(PauseResponse)
-    }
-
-    pub fn breakpoint_locations(
-        &mut self,
-        arguments: BreakpointLocationsArguments,
-    ) -> BreakpointLocationsResponse {
-        BreakpointLocationsResponse {
-            breakpoints: vec![],
-        }
-    }
-
-    pub fn restart(&mut self, executor: Executor<'gc>) {
-        self.debugger.take();
-        self.debugger = Some(Debugger::new(executor));
-        self.state = State::Launched;
-    }
-
-    pub fn disconnect(
-        &mut self,
-        arguments: DisconnectArguments,
-        executor: Executor<'gc>,
-    ) -> Result<DisconnectResponse, Error> {
-        let terminate = arguments.terminate_debuggee.unwrap_or(false);
-        let suspend = arguments.suspend_debuggee.unwrap_or(false);
-        let restart = arguments.restart.unwrap_or(false);
-
-        if terminate {
-            self.terminate();
-        } else if suspend {
-            self.pause(PauseArguments { thread_id: 0 })?;
-        }
-
-        if restart {
-            self.restart(executor);
-        }
-
-        Ok(DisconnectResponse)
-    }
-
-    pub fn terminate(&mut self) {
-        self.state = State::Terminated;
-        self.debugger.take();
-    }
-
-    pub fn launch(&mut self, executor: Executor<'gc>, arguments: LaunchArguments) {
-        let no_debug = matches!(arguments.no_debug, Some(true));
-        if !no_debug {
-            self.debugger = Some(Debugger::new(executor));
-        }
     }
 }
