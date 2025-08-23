@@ -48,10 +48,6 @@ impl<'gc> Session {
         &self.source
     }
 
-    pub fn source(&self) -> &str {
-        &self.source
-    }
-
     pub fn launch(&mut self) {
         let (first, second) = std::sync::mpsc::channel();
         let (thirst, fourth) = std::sync::mpsc::channel();
@@ -84,7 +80,7 @@ impl<'gc> Session {
                                 }
                             }
                             Request::AddFunctionBreakpoint(name) => {
-                                let id = debug::resolve_function_breakpoint(ctx, name.as_str())
+                                let id = debug::resolve_function_breakpoint(executor, ctx, name.as_str())
                                     .map(|(chunk, line)| breakpoints.add(chunk, line));
                                 if let Err(_) = thirst.send(Response::FunctionBreakpointAdded(id)) {
                                     break;

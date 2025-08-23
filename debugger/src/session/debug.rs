@@ -40,6 +40,30 @@ fn opcode_index_to_line(op_lines: &[(usize, LineNumber)], pc: usize) -> usize {
     }
 }
 
+/// Calculates how many VM instructions remain in the current source line starting at `pc`.
+/// This uses the prototype's `opcode_line_numbers` table which stores boundaries where the
+/// line number changes.
+fn instructions_to_end_of_line(prototype: &FunctionPrototype, pc: usize) -> u32 {
+    let op_lines = &prototype.opcode_line_numbers;
+    if op_lines.is_empty() {
+        return 1;
+    }
+
+    let seg_index = match op_lines.binary_search_by_key(&pc, |(opi, _)| *opi) {
+        Ok(i) => i,
+        Err(0) => 0,
+        Err(i) => i - 1,
+    };
+
+    let end_op_index = op_lines
+        .get(seg_index + 1)
+        .map(|(opi, _)| *opi)
+        .unwrap_or(prototype.opcodes.len());
+
+    let remaining = end_op_index.saturating_sub(pc);
+    u32::try_from(remaining.max(1)).unwrap_or(1)
+}
+
 fn value_to_string<'gc>(value: Value<'gc>) -> String {
     format!("{}", value.display())
 }
@@ -129,11 +153,63 @@ fn eval_watch<'gc>(spec: &WatchSpec, executor: Executor<'gc>, ctx: Context<'gc>)
     }
 }
 
-pub fn resolve_function_breakpoint<'gc>(ctx: Context<'gc>, name: &str) -> Option<(String, usize)> {
+pub fn resolve_function_breakpoint<'gc>(
+    executor: Executor<'gc>,
+    ctx: Context<'gc>,
+    name: &str,
+) -> Option<(String, usize)> {
+    fn find_named<'gc>(
+        proto: &FunctionPrototype<'gc>,
+        target: &str,
+    ) -> Option<(String, usize)> {
+        for child in proto.prototypes.iter() {
+            match child.reference {
+                piccolo::compiler::FunctionRef::Named(n, _) => {
+                    let child_name = lua_string_to_string(n);
+                    if child_name == target {
+                        let chunk_name = lua_string_to_string(child.chunk_name);
+                        let first_line = if child.opcode_line_numbers.is_empty() {
+                            0
+                        } else {
+                            child.opcode_line_numbers[0].1 .0 as usize
+                        };
+                        return Some((chunk_name, first_line));
+                    }
+                }
+                _ => {}
+            }
+            if let Some(found) = find_named(&*child, target) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    let last_segment = name.rsplit('.').next().unwrap_or(name);
+
+    if let Ok(found) = with_top_thread_state(executor, |state| match state.frames.last() {
+        Some(Frame::Lua { closure, .. }) => {
+            let root = closure.prototype();
+            find_named(&root, last_segment)
+        }
+        Some(Frame::Start(func)) => match func {
+            piccolo::Function::Closure(c) => {
+                let root = c.prototype();
+                find_named(&root, last_segment)
+            }
+            _ => None,
+        },
+        _ => None,
+    }) {
+        if let Some(pair) = found {
+            return Some(pair);
+        }
+    }
+
     let env = ctx.globals();
     let mut segments = name.split('.');
     let first = segments.next()?;
-    let mut current = env.get_value(ctx, ctx.intern(first.as_bytes()));
+    let mut current = env.get_value(ctx, first.to_string());
     for segment in segments {
         match current {
             Value::Table(t) => {
@@ -142,18 +218,17 @@ pub fn resolve_function_breakpoint<'gc>(ctx: Context<'gc>, name: &str) -> Option
             _ => return None,
         }
     }
-    match current {
-        Value::Function(piccolo::Function::Closure(closure)) => {
-            let proto = closure.prototype();
-            let chunk_name = lua_string_to_string(proto.chunk_name);
-            let first_line = if proto.opcode_line_numbers.is_empty() {
-                0
-            } else {
-                proto.opcode_line_numbers[0].1 .0 as usize
-            };
-            Some((chunk_name, first_line))
-        }
-        _ => None,
+    if let Value::Function(piccolo::Function::Closure(closure)) = current {
+        let proto = closure.prototype();
+        let chunk_name = lua_string_to_string(proto.chunk_name);
+        let first_line = if proto.opcode_line_numbers.is_empty() {
+            0
+        } else {
+            proto.opcode_line_numbers[0].1 .0 as usize
+        };
+        Some((chunk_name, first_line))
+    } else {
+        None
     }
 }
 
@@ -277,13 +352,19 @@ fn step_one<'gc>(
 
     if is_lua_top {
         let _ = with_top_thread_state_mut(executor, ctx, |thread, state| {
+            let mut max_instructions: u32 = 1;
+            if let Some(Frame::Lua { closure, pc, .. }) = state.frames.last() {
+                let proto = closure.prototype();
+                max_instructions = instructions_to_end_of_line(&proto, *pc);
+            }
+
             let mut fuel = Fuel::with(1_000_000);
             let lua_frame = LuaFrame {
                 state,
                 thread,
                 fuel: &mut fuel,
             };
-            let _ = run_vm(ctx, lua_frame, 1);
+            let _ = run_vm(ctx, lua_frame, max_instructions);
         });
     } else {
         let mut fuel = Fuel::with(non_lua_fuel);
@@ -308,17 +389,12 @@ pub fn continue_run<'gc>(
     watchpoints: &mut Vec<WatchEntry>,
 ) -> Result<StopReason, Error> {
     loop {
-        match current_location(executor) {
-            Ok(Some(location)) => {
-                if let Some(stop_reason) = stop_if_breakpoint(&location, &breakpoints) {
+        match step_one(executor, ctx, watchpoints)? {
+            StopReason::Step(location) => {
+                if let Some(stop_reason) = stop_if_breakpoint(&location, breakpoints) {
                     return Ok(stop_reason);
                 }
             }
-            Ok(None) => {}
-            Err(err) => return Err(err),
-        }
-        match step_one(executor, ctx, watchpoints)? {
-            StopReason::Step(_) => continue,
             other => return Ok(other),
         }
     }
@@ -335,10 +411,6 @@ pub fn step_into<'gc>(
         Ok(None) => return Err(Error::ExecutorFinished),
         Err(err) => return Err(err),
     };
-
-    if let Some(stop_reason) = stop_if_breakpoint(&start_location, breakpoints) {
-        return Ok(stop_reason);
-    }
 
     loop {
         match step_one(executor, ctx, watchpoints)? {
@@ -369,10 +441,6 @@ pub fn step_over<'gc>(
         Ok((_depth, None)) => return Err(Error::ExecutorFinished),
         Err(err) => return Err(err),
     };
-
-    if let Some(stop_reason) = stop_if_breakpoint(&start_location, breakpoints) {
-        return Ok(stop_reason);
-    }
 
     loop {
         match step_one(executor, ctx, watchpoints)? {

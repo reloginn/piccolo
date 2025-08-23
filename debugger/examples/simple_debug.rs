@@ -5,15 +5,14 @@ fn main() {
     let source = r#"
             x = 0
             local outer = 10
-            local function foo(n)
+            function foo(n)
                 outer = outer + n
                 x = x + n
                 return outer + x
             end
 
-            local function bar()
+            function bar()
                 local y = foo(1)
-                t.k = y
                 return y
             end
 
@@ -28,9 +27,9 @@ fn main() {
 
     dbg.add_breakpoint(session_id, "test.lua".to_string(), 3);
     dbg.add_breakpoint(session_id, "test.lua".to_string(), 9);
-    dbg.add_breakpoint(session_id, "test.lua".to_string(), 13);
+    dbg.add_breakpoint(session_id, "test.lua".to_string(), 7);
 
-    dbg.add_function_breakpoint(session_id, "foo".to_string());
+    dbg.add_function_breakpoint(session_id, "bar".to_string());
 
     println!("Breakpoints:");
     for (src, lines) in dbg.list_breakpoints(session_id).unwrap() {
@@ -39,7 +38,12 @@ fn main() {
         println!("  {src}: {:?}", v);
     }
 
-    dbg.remove_breakpoint(session_id, "test.lua".to_string(), 9);
+    dbg.remove_breakpoint(session_id, "test.lua".to_string(), 7);
+
+    println!(
+        "breakpoints: {:?}",
+        dbg.list_breakpoints(session_id).unwrap()
+    );
 
     dbg.watch_global(session_id, "x".to_string(), None);
 
@@ -104,7 +108,7 @@ fn main() {
         }
     }
 
-    println!("Step over…");
+    println!("Step over...");
     stop = dbg.step_over(session_id);
     println!("Stopped: {:?}", stop);
 
