@@ -2,7 +2,7 @@ use std::sync::mpsc::{Receiver, Sender};
 
 use base64::Engine;
 
-use crate::StopReason;
+use crate::{watch::WatchSpec, StopReason, WatchMode};
 
 use super::{Debugger, Error};
 
@@ -55,7 +55,9 @@ pub enum SteppingGranularity {}
 
 pub struct StepOutArguments {
     thread_id: usize,
+    #[allow(dead_code)]
     single_thread: Option<bool>,
+    #[allow(dead_code)]
     granularity: Option<SteppingGranularity>,
 }
 
@@ -65,17 +67,22 @@ pub struct StepOutResponse;
 
 pub struct StepInArguments {
     thread_id: usize,
+    #[allow(dead_code)]
     single_thread: Option<bool>,
+    #[allow(dead_code)]
     target_id: Option<usize>,
+    #[allow(dead_code)]
     granularity: Option<SteppingGranularity>,
 }
 
 pub struct StepInResponse;
 
+#[allow(dead_code)]
 pub struct StepInTargetsArguments {
     frame_id: usize,
 }
 
+#[allow(dead_code)]
 pub struct StepInTarget {
     id: usize,
     label: String,
@@ -85,6 +92,7 @@ pub struct StepInTarget {
     end_column: Option<usize>,
 }
 
+#[allow(dead_code)]
 pub struct StepInTargetsResponse {
     targets: Vec<StepInTarget>,
 }
@@ -93,14 +101,19 @@ pub struct StepInTargetsResponse {
 pub struct Source {
     name: Option<String>,
     path: Option<String>,
-    source_reference: Option<usize>,
+    #[allow(dead_code)]
     presentation_hint: Option<String>,
+    #[allow(dead_code)]
     origin: Option<String>,
+    #[allow(dead_code)]
     sources: Option<Vec<Source>>,
+    #[allow(dead_code)]
     adapter_data: Option<String>,
+    #[allow(dead_code)]
     checksums: Option<Vec<String>>,
 }
 
+#[allow(dead_code)]
 pub struct SourceBreakpoint {
     line: usize,
     column: Option<usize>,
@@ -113,10 +126,12 @@ pub struct SourceBreakpoint {
 pub struct SetBreakpointsArguments {
     source: Source,
     breakpoints: Option<Vec<SourceBreakpoint>>,
-    lines: Option<Vec<usize>>,
+    #[allow(dead_code)]
     source_modified: Option<bool>,
 }
 
+#[allow(dead_code)]
+#[derive(Default)]
 pub struct Breakpoint {
     id: Option<usize>,
     verified: bool,
@@ -131,6 +146,7 @@ pub struct Breakpoint {
     reason: Option<String>,
 }
 
+#[allow(dead_code)]
 pub struct SetBreakpointsResponse {
     breakpoints: Vec<Breakpoint>,
 }
@@ -144,7 +160,9 @@ pub enum DataBreakpointAccessType {
 pub struct DataBreakpoint {
     data_id: String,
     access_type: DataBreakpointAccessType,
+    #[allow(dead_code)]
     condition: Option<String>,
+    #[allow(dead_code)]
     hit_condition: Option<String>,
 }
 
@@ -152,13 +170,16 @@ pub struct SetDataBreakpointsArguments {
     breakpoints: Vec<DataBreakpoint>,
 }
 
+#[allow(dead_code)]
 pub struct SetDataBreakpointsResponse {
     breakpoints: Vec<Breakpoint>,
 }
 
 pub struct FunctionBreakpoint {
     name: String,
+    #[allow(dead_code)]
     condition: Option<String>,
+    #[allow(dead_code)]
     hit_condition: Option<String>,
 }
 
@@ -166,10 +187,12 @@ pub struct SetFunctionBreakpointsArguments {
     breakpoints: Vec<FunctionBreakpoint>,
 }
 
+#[allow(dead_code)]
 pub struct SetFunctionBreakpointsResponse {
     breakpoints: Vec<Breakpoint>,
 }
 
+#[allow(dead_code)]
 pub struct InstructionBreakpoint {
     instruction_reference: String,
     offset: Option<usize>,
@@ -182,10 +205,12 @@ pub struct SetInstructionBreakpointsArguments {
     breakpoints: Vec<InstructionBreakpoint>,
 }
 
+#[allow(dead_code)]
 pub struct SetInstructionBreakpointsResponse {
     breakpoints: Vec<Breakpoint>,
 }
 
+#[allow(dead_code)]
 pub struct StackTraceFormat {
     parameters: Option<bool>,
     parameter_types: Option<bool>,
@@ -200,14 +225,17 @@ pub struct StackTraceArguments {
     thread_id: usize,
     start_frame: Option<usize>,
     levels: Option<usize>,
+    #[allow(dead_code)]
     format: Option<StackTraceFormat>,
 }
 
+#[allow(dead_code)]
 pub struct StackTraceResponse {
     stack_frames: Vec<StackFrame>,
     total_frames: usize,
 }
 
+#[allow(dead_code)]
 pub struct StackFrame {
     id: usize,
     name: String,
@@ -229,6 +257,7 @@ pub struct ReadMemoryArguments {
     count: Option<usize>,
 }
 
+#[allow(dead_code)]
 pub struct ReadMemoryResponse {
     address: String,
     unreadable_bytes: Option<usize>,
@@ -238,12 +267,15 @@ pub struct ReadMemoryResponse {
 pub struct DisassembleArguments {
     thread_id: Option<usize>,
     memory_reference: String,
+    #[allow(dead_code)]
     offset: Option<usize>,
     instruction_offset: Option<usize>,
     instruction_count: Option<usize>,
+    #[allow(dead_code)]
     resolve_symbols: Option<bool>,
 }
 
+#[allow(dead_code)]
 pub struct DisassembledInstruction {
     address: String,
     instruction_bytes: Option<String>,
@@ -257,19 +289,23 @@ pub struct DisassembledInstruction {
     presentation_hint: Option<String>,
 }
 
+#[allow(dead_code)]
 pub struct DisassembleResponse {
     instructions: Vec<DisassembledInstruction>,
 }
 
 pub struct ContinueArguments {
     thread_id: usize,
+    #[allow(dead_code)]
     single_thread: Option<bool>,
 }
 
+#[allow(dead_code)]
 pub struct ContinueResponse {
     all_threads_continued: Option<bool>,
 }
 
+#[allow(dead_code)]
 pub struct PauseArguments {
     thread_id: usize,
 }
@@ -284,6 +320,7 @@ pub struct BreakpointLocationsArguments {
     end_column: Option<usize>,
 }
 
+#[allow(dead_code)]
 pub struct BreakpointLocation {
     line: usize,
     column: Option<usize>,
@@ -291,6 +328,7 @@ pub struct BreakpointLocation {
     end_column: Option<usize>,
 }
 
+#[allow(dead_code)]
 pub struct BreakpointLocationsResponse {
     breakpoints: Vec<BreakpointLocation>,
 }
@@ -325,11 +363,13 @@ pub struct TerminateThreadsArguments {
 
 pub struct TerminateThreadsResponse;
 
+#[allow(dead_code)]
 pub struct Thread {
     id: usize,
     name: String,
 }
 
+#[allow(dead_code)]
 pub struct ThreadsResponse {
     threads: Vec<Thread>,
 }
@@ -653,45 +693,260 @@ impl Adapter {
         &mut self,
         arguments: BreakpointLocationsArguments,
     ) -> BreakpointLocationsResponse {
-        BreakpointLocationsResponse {
-            breakpoints: vec![],
-        }
+        let source_path = arguments
+            .source
+            .path
+            .as_ref()
+            .or(arguments.source.name.as_ref());
+
+        let has_session = source_path
+            .map(|path| self.debugger.map_by_name(path).is_some())
+            .unwrap_or(false);
+
+        let breakpoints = if has_session {
+            vec![BreakpointLocation {
+                line: arguments.line,
+                column: arguments.column,
+                end_line: arguments.end_line,
+                end_column: arguments.end_column,
+            }]
+        } else {
+            vec![]
+        };
+
+        BreakpointLocationsResponse { breakpoints }
     }
 
     pub fn set_breakpoints(
         &mut self,
         arguments: SetBreakpointsArguments,
     ) -> SetBreakpointsResponse {
-        SetBreakpointsResponse {
-            breakpoints: vec![],
+        let Some(path) = arguments.source.path.to_owned() else {
+            return SetBreakpointsResponse {
+                breakpoints: vec![Breakpoint {
+                    id: None,
+                    verified: false,
+                    message: Some("source path is required".to_string()),
+                    ..Default::default()
+                }],
+            };
+        };
+
+        let Some(session_id) = self.debugger.map_by_name(&path) else {
+            let breakpoints = arguments
+                .breakpoints
+                .unwrap_or_default()
+                .into_iter()
+                .map(|bp| Breakpoint {
+                    id: None,
+                    verified: false,
+                    message: Some("source path not found in any session".to_string()),
+                    source: Some(arguments.source.clone()),
+                    line: Some(bp.line),
+                    ..Default::default()
+                })
+                .collect();
+
+            return SetBreakpointsResponse { breakpoints };
+        };
+
+        let mut breakpoints = Vec::with_capacity(
+            arguments
+                .breakpoints
+                .as_ref()
+                .map(|breakpoints| breakpoints.len())
+                .unwrap_or(0),
+        );
+        for breakpoint in arguments.breakpoints.unwrap_or_default() {
+            let Ok(id) = self
+                .debugger
+                .add_breakpoint(session_id, path.clone(), breakpoint.line)
+            else {
+                breakpoints.push(Breakpoint {
+                    id: None,
+                    verified: false,
+                    message: Some(format!(
+                        "failed to add breakpoint at line {}",
+                        breakpoint.line
+                    )),
+                    ..Default::default()
+                });
+                continue;
+            };
+            breakpoints.push(Breakpoint {
+                id: Some(id),
+                verified: true,
+                message: None,
+                source: Some(arguments.source.clone()),
+                line: Some(breakpoint.line),
+                column: None,
+                end_line: None,
+                end_column: None,
+                instruction_reference: None,
+                offset: None,
+                reason: None,
+            });
         }
+        SetBreakpointsResponse { breakpoints }
     }
 
     pub fn set_data_breakpoints(
         &mut self,
         arguments: SetDataBreakpointsArguments,
     ) -> SetDataBreakpointsResponse {
-        SetDataBreakpointsResponse {
-            breakpoints: vec![],
+        fn parse_data_id(s: &str) -> WatchSpec {
+            let lower = s.to_ascii_lowercase();
+            if let Some(register) = lower
+                .strip_prefix("register:")
+                .or(lower.strip_prefix("reg:"))
+            {
+                let register = register.trim().parse::<usize>().unwrap_or_default();
+
+                return WatchSpec::Register(register);
+            }
+
+            if let Some(register) = lower.strip_prefix("r") {
+                if let Ok(register) = register.trim().parse::<usize>() {
+                    return WatchSpec::Register(register);
+                }
+            }
+
+            WatchSpec::Global(s.to_string())
         }
+
+        let mut breakpoints = Vec::with_capacity(arguments.breakpoints.len());
+        for breakpoint in arguments.breakpoints.into_iter() {
+            let mode = match breakpoint.access_type {
+                DataBreakpointAccessType::Read => Some(WatchMode::Access),
+                DataBreakpointAccessType::Write => Some(WatchMode::Modify),
+                DataBreakpointAccessType::ReadWrite => Some(WatchMode::Access),
+            };
+
+            match parse_data_id(&breakpoint.data_id) {
+                WatchSpec::Register(register) => {
+                    let verified = self
+                        .debugger
+                        .sessions
+                        .iter_mut()
+                        .map(|session| session.watch_register(register, mode).is_ok())
+                        .collect::<Vec<_>>();
+                    if verified.iter().all(|value| !value) {
+                        breakpoints.push(Breakpoint {
+                            id: None,
+                            verified: false,
+                            message: Some(format!("failed to watch register:{}", register)),
+                            ..Default::default()
+                        });
+                    } else {
+                        breakpoints.push(Breakpoint {
+                            id: None,
+                            verified: true,
+                            message: Some(format!("watch register:{}", register)),
+                            ..Default::default()
+                        });
+                    }
+                }
+                WatchSpec::Global(name) => {
+                    let verified = self
+                        .debugger
+                        .sessions
+                        .iter_mut()
+                        .map(|session| session.watch_global(name.clone(), mode).is_ok())
+                        .collect::<Vec<_>>();
+                    if verified.iter().all(|value| !value) {
+                        breakpoints.push(Breakpoint {
+                            id: None,
+                            verified: false,
+                            message: Some(format!("failed to watch global:{}", name)),
+                            ..Default::default()
+                        });
+                    } else {
+                        breakpoints.push(Breakpoint {
+                            id: None,
+                            verified: true,
+                            message: Some(format!("watch global:{}", name)),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
+        SetDataBreakpointsResponse { breakpoints }
     }
 
     pub fn set_function_breakpoints(
         &mut self,
         arguments: SetFunctionBreakpointsArguments,
     ) -> SetFunctionBreakpointsResponse {
-        SetFunctionBreakpointsResponse {
-            breakpoints: vec![],
+        let mut breakpoints = Vec::with_capacity(arguments.breakpoints.len());
+        for breakpoint in arguments.breakpoints.into_iter() {
+            let results: Vec<_> = self
+                .debugger
+                .sessions
+                .iter_mut()
+                .map(|session| session.add_function_breakpoint(breakpoint.name.clone()))
+                .collect();
+
+            if results.iter().all(|result| result.is_err()) {
+                breakpoints.push(Breakpoint {
+                    id: None,
+                    verified: false,
+                    message: Some(format!(
+                        "function '{}' not found in any session",
+                        breakpoint.name
+                    )),
+                    ..Default::default()
+                });
+                continue;
+            }
+
+            let first_success = results.iter().find_map(|result| result.ok().flatten());
+
+            match first_success {
+                Some(id) => {
+                    breakpoints.push(Breakpoint {
+                        id: Some(id),
+                        verified: true,
+                        message: None,
+                        ..Default::default()
+                    });
+                }
+                None => {
+                    breakpoints.push(Breakpoint {
+                        id: None,
+                        verified: false,
+                        message: Some(format!("function '{}' not found", breakpoint.name)),
+                        ..Default::default()
+                    });
+                }
+            }
         }
+        SetFunctionBreakpointsResponse { breakpoints }
     }
 
     pub fn set_instruction_breakpoints(
         &mut self,
         arguments: SetInstructionBreakpointsArguments,
     ) -> SetInstructionBreakpointsResponse {
-        SetInstructionBreakpointsResponse {
-            breakpoints: vec![],
-        }
+        let breakpoints = arguments
+            .breakpoints
+            .into_iter()
+            .map(|_| Breakpoint {
+                id: None,
+                verified: false,
+                message: Some("instruction breakpoints are not supported".to_string()),
+                source: None,
+                line: None,
+                column: None,
+                end_line: None,
+                end_column: None,
+                instruction_reference: None,
+                offset: None,
+                reason: None,
+            })
+            .collect();
+        SetInstructionBreakpointsResponse { breakpoints }
     }
 
     pub fn stack_trace(
@@ -726,7 +981,6 @@ impl Adapter {
                 source: Some(Source {
                     name: Some(location.chunk().to_string()),
                     path: Some(location.chunk().to_string()),
-                    source_reference: None,
                     presentation_hint: None,
                     origin: None,
                     sources: None,

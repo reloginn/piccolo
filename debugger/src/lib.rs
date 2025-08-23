@@ -9,7 +9,9 @@ use std::collections::HashMap;
 
 use piccolo::opcode::Operation;
 
-pub use self::{error::Error, location::Location, stop_reason::StopReason, watch::WatchMode};
+pub use self::{
+    adapter::*, error::Error, location::Location, stop_reason::StopReason, watch::WatchMode,
+};
 
 use self::session::Session;
 
@@ -64,6 +66,10 @@ impl Debugger {
         self.sessions
             .get_mut(session_id)
             .map(|session| session.terminate());
+    }
+
+    pub fn map_by_name(&self, name: &str) -> Option<usize> {
+        self.sessions.iter().position(|s| s.name() == name)
     }
 
     pub fn add_session(&mut self, source: impl Into<String>, path: impl Into<String>) -> usize {

@@ -80,8 +80,12 @@ impl<'gc> Session {
                                 }
                             }
                             Request::AddFunctionBreakpoint(name) => {
-                                let id = debug::resolve_function_breakpoint(executor, ctx, name.as_str())
-                                    .map(|(chunk, line)| breakpoints.add(chunk, line));
+                                let id = debug::resolve_function_breakpoint(
+                                    executor,
+                                    ctx,
+                                    name.as_str(),
+                                )
+                                .map(|(chunk, line)| breakpoints.add(chunk, line));
                                 if let Err(_) = thirst.send(Response::FunctionBreakpointAdded(id)) {
                                     break;
                                 }

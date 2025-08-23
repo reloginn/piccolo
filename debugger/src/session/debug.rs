@@ -158,10 +158,7 @@ pub fn resolve_function_breakpoint<'gc>(
     ctx: Context<'gc>,
     name: &str,
 ) -> Option<(String, usize)> {
-    fn find_named<'gc>(
-        proto: &FunctionPrototype<'gc>,
-        target: &str,
-    ) -> Option<(String, usize)> {
+    fn find_named<'gc>(proto: &FunctionPrototype<'gc>, target: &str) -> Option<(String, usize)> {
         for child in proto.prototypes.iter() {
             match child.reference {
                 piccolo::compiler::FunctionRef::Named(n, _) => {

@@ -1,7 +1,6 @@
-use piccolo::Value;
-use piccolo_debugger::Debugger;
+use piccolo_debugger::{Debugger, Error};
 
-fn main() {
+fn main() -> Result<(), Error> {
     let source = r#"
             x = 0
             local outer = 10
@@ -20,107 +19,102 @@ fn main() {
         "#;
     let path = "test.lua";
 
-    let mut dbg = Debugger::new();
-    let session_id = dbg.add_session(source, path);
+    let mut debugger = Debugger::new();
+    let session_id = debugger.add_session(source, path);
 
-    dbg.launch(session_id);
+    debugger.launch(session_id);
 
-    dbg.add_breakpoint(session_id, "test.lua".to_string(), 3);
-    dbg.add_breakpoint(session_id, "test.lua".to_string(), 9);
-    dbg.add_breakpoint(session_id, "test.lua".to_string(), 7);
+    debugger.add_breakpoint(session_id, "test.lua".to_string(), 3)?;
+    debugger.add_breakpoint(session_id, "test.lua".to_string(), 9)?;
+    debugger.add_breakpoint(session_id, "test.lua".to_string(), 7)?;
 
-    dbg.add_function_breakpoint(session_id, "bar".to_string());
+    debugger.add_function_breakpoint(session_id, "bar".to_string())?;
 
     println!("Breakpoints:");
-    for (src, lines) in dbg.list_breakpoints(session_id).unwrap() {
+    for (source, lines) in debugger.list_breakpoints(session_id)? {
         let mut v: Vec<usize> = lines.iter().copied().collect();
         v.sort_unstable();
-        println!("  {src}: {:?}", v);
+        println!("  {source}: {:?}", v);
     }
 
-    dbg.remove_breakpoint(session_id, "test.lua".to_string(), 7);
+    debugger.remove_breakpoint(session_id, "test.lua".to_string(), 7)?;
 
-    println!(
-        "breakpoints: {:?}",
-        dbg.list_breakpoints(session_id).unwrap()
-    );
+    println!("breakpoints: {:?}", debugger.list_breakpoints(session_id)?);
 
-    dbg.watch_global(session_id, "x".to_string(), None);
+    debugger.watch_global(session_id, "x".to_string(), None)?;
 
     println!("Continue…");
-    let mut stop = dbg.continue_run(session_id);
+    let mut stop = debugger.continue_run(session_id)?;
     println!("Stopped: {:?}", stop);
 
-    let bt = dbg.backtrace(session_id);
+    let bt = debugger.backtrace(session_id)?;
     println!("Backtrace:");
-    for (i, loc) in bt.unwrap().iter().enumerate() {
+    for (index, location) in bt.iter().enumerate() {
         println!(
-            "  #{i} {}:{} {}",
-            loc.chunk(),
-            loc.line(),
-            loc.function_ref()
+            "  #{index} {}:{} {}",
+            location.chunk(),
+            location.line(),
+            location.function_ref()
         );
     }
 
-    if let Some(dis) = dbg
-        .disassemble(session_id, "".to_string(), None, None)
-        .unwrap()
+    if let Some(disassembled_instructions) =
+        debugger.disassemble(session_id, "".to_string(), None, None)?
     {
         println!("Disassembly (current function):");
-        for l in dis.iter().take(10) {
-            println!("  {l:?}");
+        for instruction in disassembled_instructions.iter().take(10) {
+            println!("  {instruction:?}");
         }
     }
 
-    if let Some(readed) = dbg
-        .read_memory(session_id, "".to_string(), None, None)
-        .unwrap()
-    {
-        println!("Readed: {:?}", readed);
+    if let Some(readed_memory) = debugger.read_memory(session_id, "".to_string(), None, None)? {
+        println!("Readed: {:?}", readed_memory);
     }
 
-    if let Some(regs) = dbg.read_registers(session_id).unwrap() {
-        println!("Top frame registers ({}):", regs.len());
-        for (i, v) in regs.iter().enumerate() {
-            println!("  r{i} = {}", v);
+    if let Some(registers) = debugger.read_registers(session_id)? {
+        println!("Top frame registers ({}):", registers.len());
+        for (index, value) in registers.iter().enumerate() {
+            println!("  r{index} = {}", value);
         }
     }
 
     println!("Stack snapshot (before stepping):");
-    for (loc, regs) in dbg.stack_snapshot(session_id).unwrap() {
+    for (location, registers) in debugger.stack_snapshot(session_id)? {
         println!(
             "  {}:{} {} ({} regs)",
-            loc.chunk(),
-            loc.line(),
-            loc.function_ref(),
-            regs.len()
+            location.chunk(),
+            location.line(),
+            location.function_ref(),
+            registers.len()
         );
     }
 
     println!("Step into…");
-    stop = dbg.step_into(session_id);
+    stop = debugger.step_into(session_id)?;
     println!("Stopped: {:?}", stop);
 
-    if let Some(ups) = dbg.read_upvalues(session_id).unwrap() {
-        println!("Upvalues ({}):", ups.len());
-        for (i, v) in ups.iter().enumerate() {
-            println!("  uv{i} = {}", v);
+    if let Some(upvalues) = debugger.read_upvalues(session_id)? {
+        println!("Upvalues ({}):", upvalues.len());
+        for (index, value) in upvalues.iter().enumerate() {
+            println!("  uv{index} = {}", value);
         }
     }
 
     println!("Step over...");
-    stop = dbg.step_over(session_id);
+    stop = debugger.step_over(session_id)?;
     println!("Stopped: {:?}", stop);
 
     println!("Step out…");
-    stop = dbg.step_out(session_id);
+    stop = debugger.step_out(session_id)?;
     println!("Stopped: {:?}", stop);
 
     println!("Continue again…");
-    stop = dbg.continue_run(session_id);
+    stop = debugger.continue_run(session_id)?;
     println!("Stopped: {:?}", stop);
 
-    if let Some(v0) = dbg.read_register(session_id, 0).unwrap() {
+    if let Some(v0) = debugger.read_register(session_id, 0)? {
         println!("r0 = {}", v0);
     }
+
+    Ok(())
 }
