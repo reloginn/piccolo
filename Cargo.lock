@@ -300,6 +300,7 @@ dependencies = [
  "clap",
  "gc-arena",
  "hashbrown",
+ "piccolo-debugger",
  "rand",
  "rustyline",
  "thiserror",

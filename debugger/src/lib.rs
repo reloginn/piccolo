@@ -5,8 +5,8 @@ struct PrototypeReference {
     prototype_index: usize,
 }
 
-use std::collections::HashMap;
 use piccolo::opcode::Operation;
+use std::collections::HashMap;
 
 pub use self::{
     adapter::*, error::Error, location::Location, stop_reason::StopReason, watch::WatchMode,
